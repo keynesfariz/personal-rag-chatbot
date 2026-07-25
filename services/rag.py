@@ -12,7 +12,14 @@ except Exception as e:
     index = None
 
 # Cache the model name for the frontend
-redis_client.set("cached_embedding_model", "Pinecone Integrated Inference")
+try:
+    desc = pc.indexes.describe(settings.pinecone_index_name)
+    model_name = "Pinecone Integrated Inference"
+    if hasattr(desc, "spec") and hasattr(desc.spec, "integrated") and hasattr(desc.spec.integrated, "embed"):
+        model_name = f"Pinecone ({desc.spec.integrated.embed.model})"
+    redis_client.set("cached_embedding_model", model_name)
+except Exception:
+    redis_client.set("cached_embedding_model", "Pinecone Integrated Inference")
 
 class RAGService:
     def get_context(self, query: str, conversation_id: str) -> str:

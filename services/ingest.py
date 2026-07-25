@@ -94,7 +94,7 @@ class IngestionService:
                 continue
             chunk_id = str(uuid.uuid4())
             records.append({
-                "_id": chunk_id,
+                "id": chunk_id,
                 "text": chunk,
                 "source": file_path,
                 "repo": repo_name
