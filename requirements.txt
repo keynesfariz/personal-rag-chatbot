@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-dotenv
+pinecone
+redis
+supabase
+langchain
+langchain-core
+langchain-groq
+langchain-google-genai
+langchain-community
+httpx
