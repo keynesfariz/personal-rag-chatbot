@@ -6,6 +6,10 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from services.rag import index
 from core.config import settings
 
+import logging
+
+logger = logging.getLogger("uvicorn.error")
+
 class IngestionService:
     def __init__(self):
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -14,7 +18,7 @@ class IngestionService:
         )
         self.headers = {"Accept": "application/vnd.github.v3+json"}
         if settings.github_pat:
-            self.headers["Authorization"] = f"token {settings.github_pat}"
+            self.headers["Authorization"] = f"Bearer {settings.github_pat}"
 
     def _extract_json_strings(self, data: Any) -> str:
         """Recursively extracts all string values from a JSON structure."""
@@ -50,15 +54,22 @@ class IngestionService:
                 if response.status_code == 200:
                     content = response.text
                     await self._embed_and_upsert(file_path, content, repo_full_name)
+                else:
+                    logger.error(f"Failed to fetch {file_path}: HTTP {response.status_code}")
 
     async def process_initial_ingestion(self, repo_full_name: str, branch: str = "main"):
         """Fetches all markdown and json files from the repository's git tree for initial ingestion."""
+        logger.info(f"Starting initial ingestion for {repo_full_name} on branch {branch}")
+        
+        if not settings.github_pat:
+            logger.warning("GITHUB_PAT is missing. Ingestion may fail if the repository is private.")
+            
         async with httpx.AsyncClient(headers=self.headers) as client:
             tree_url = f"https://api.github.com/repos/{repo_full_name}/git/trees/{branch}?recursive=1"
             response = await client.get(tree_url)
             
             if response.status_code != 200:
-                print(f"Failed to fetch git tree for {repo_full_name}: {response.status_code}")
+                logger.error(f"Failed to fetch git tree for {repo_full_name}: HTTP {response.status_code}. Response: {response.text}")
                 return
                 
             tree_data = response.json()
@@ -66,6 +77,8 @@ class IngestionService:
                 item["path"] for item in tree_data.get("tree", [])
                 if item["type"] == "blob" and (item["path"].endswith(".md") or item["path"].endswith(".json"))
             ]
+            
+            logger.info(f"Found {len(files_to_process)} files to process in tree.")
             
             for file_path in files_to_process:
                 raw_url = f"https://raw.githubusercontent.com/{repo_full_name}/{branch}/{file_path}"
@@ -77,6 +90,7 @@ class IngestionService:
 
     async def _embed_and_upsert(self, file_path: str, content: str, repo_name: str):
         if not index:
+            logger.error("Skipping upsert: Pinecone index is not initialized. Check your API key and Index name.")
             return
             
         if file_path.endswith(".json"):
@@ -104,6 +118,9 @@ class IngestionService:
             
         for i in range(0, len(records), 100):
             batch = records[i:i+100]
-            index.upsert_records(namespace=settings.pinecone_namespace, records=batch)
+            try:
+                index.upsert_records(namespace=settings.pinecone_namespace, records=batch)
+            except Exception as e:
+                logger.error(f"Pinecone upsert failed for batch: {str(e)}")
 
 ingestor = IngestionService()

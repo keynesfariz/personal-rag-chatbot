@@ -3,12 +3,16 @@ from services.cache import cache
 from core.config import settings
 from services.cache import redis_client
 
+import logging
+logger = logging.getLogger("uvicorn.error")
+
 # Initialize Pinecone
 try:
     pc = Pinecone(api_key=settings.pinecone_api_key)
     index = pc.Index(settings.pinecone_index_name)
 except Exception as e:
     # Handle cases where API keys are not set yet during development
+    logger.error(f"Failed to initialize Pinecone index: {str(e)}")
     index = None
 
 # Cache the model name for the frontend
