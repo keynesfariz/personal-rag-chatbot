@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # Pinecone Configuration
     pinecone_api_key: str
     pinecone_index_name: str = "keynesfariz-rag"
+    pinecone_namespace: str = "__default__"
 
     # LLM API Keys
     groq_api_key: Optional[str] = None

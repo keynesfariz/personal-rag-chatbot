@@ -29,7 +29,7 @@ class RAGService:
 
         # 1. Query Pinecone Integrated Inference directly with text
         response = index.search(
-            namespace="",
+            namespace=settings.pinecone_namespace,
             top_k=5,
             inputs={"text": query}
         )
