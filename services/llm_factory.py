@@ -1,15 +1,20 @@
 from typing import Literal
+
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
+
 from core.config import settings
 from services.cache import redis_client
 
 Provider = Literal["groq", "gemini"]
 
+
 class LLMFactory:
     @staticmethod
-    def get_llm(provider: Provider = "gemini", temperature: float = 0.7) -> BaseChatModel:
+    def get_llm(
+        provider: Provider = "gemini", temperature: float = 0.7
+    ) -> BaseChatModel:
         if provider == "groq":
             if not settings.groq_api_key:
                 raise ValueError("GROQ_API_KEY is not set.")
@@ -20,7 +25,7 @@ class LLMFactory:
                 model_name=model_name,
                 temperature=temperature,
             )
-            
+
         elif provider == "gemini":
             if not settings.gemini_api_key:
                 raise ValueError("GEMINI_API_KEY is not set.")
@@ -31,6 +36,6 @@ class LLMFactory:
                 model=model_name,
                 temperature=temperature,
             )
-            
+
         else:
             raise ValueError(f"Unsupported LLM provider: {provider}")

@@ -1,20 +1,21 @@
-import httpx
-import uuid
 import json
-from typing import Dict, Any
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from services.rag import index
-from core.config import settings
-
 import logging
+import uuid
+from typing import Any, Dict
+
+import httpx
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+from core.config import settings
+from services.rag import index
 
 logger = logging.getLogger("uvicorn.error")
+
 
 class IngestionService:
     def __init__(self):
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200
+            chunk_size=1000, chunk_overlap=200
         )
         self.headers = {"Accept": "application/vnd.github.v3+json"}
         if settings.github_pat:
@@ -40,87 +41,109 @@ class IngestionService:
         branch = payload["ref"].split("/")[-1]
 
         files_to_process = set()
-        
+
         for commit in payload["commits"]:
             for file_path in commit.get("added", []) + commit.get("modified", []):
-                if file_path.endswith(".md") or file_path.endswith(".json"):
+                if file_path.endswith(".md") or (
+                    file_path.endswith(".json") and file_path.startswith("data/")
+                ):
                     files_to_process.add(file_path)
 
         async with httpx.AsyncClient(headers=self.headers) as client:
             for file_path in files_to_process:
                 raw_url = f"https://raw.githubusercontent.com/{repo_full_name}/{branch}/{file_path}"
                 response = await client.get(raw_url)
-                
+
                 if response.status_code == 200:
                     content = response.text
                     await self._embed_and_upsert(file_path, content, repo_full_name)
                 else:
-                    logger.error(f"Failed to fetch {file_path}: HTTP {response.status_code}")
+                    logger.error(
+                        f"Failed to fetch {file_path}: HTTP {response.status_code}"
+                    )
 
-    async def process_initial_ingestion(self, repo_full_name: str, branch: str = "main"):
+    async def process_initial_ingestion(
+        self, repo_full_name: str, branch: str = "main"
+    ):
         """Fetches all markdown and json files from the repository's git tree for initial ingestion."""
-        logger.info(f"Starting initial ingestion for {repo_full_name} on branch {branch}")
-        
+        logger.info(
+            f"Starting initial ingestion for {repo_full_name} on branch {branch}"
+        )
+
         if not settings.github_pat:
-            logger.warning("GITHUB_PAT is missing. Ingestion may fail if the repository is private.")
-            
+            logger.warning(
+                "GITHUB_PAT is missing. Ingestion may fail if the repository is private."
+            )
+
         async with httpx.AsyncClient(headers=self.headers) as client:
             tree_url = f"https://api.github.com/repos/{repo_full_name}/git/trees/{branch}?recursive=1"
             response = await client.get(tree_url)
-            
+
             if response.status_code != 200:
-                logger.error(f"Failed to fetch git tree for {repo_full_name}: HTTP {response.status_code}. Response: {response.text}")
+                logger.error(
+                    f"Failed to fetch git tree for {repo_full_name}: HTTP {response.status_code}. Response: {response.text}"
+                )
                 return
-                
+
             tree_data = response.json()
             files_to_process = [
-                item["path"] for item in tree_data.get("tree", [])
-                if item["type"] == "blob" and (item["path"].endswith(".md") or item["path"].endswith(".json"))
+                item["path"]
+                for item in tree_data.get("tree", [])
+                if item["type"] == "blob"
+                and (
+                    item["path"].endswith(".md")
+                    or (
+                        item["path"].endswith(".json")
+                        and item["path"].startswith("data/")
+                    )
+                )
             ]
-            
+
             logger.info(f"Found {len(files_to_process)} files to process in tree.")
-            
+
             for file_path in files_to_process:
                 raw_url = f"https://raw.githubusercontent.com/{repo_full_name}/{branch}/{file_path}"
                 file_response = await client.get(raw_url)
-                
+
                 if file_response.status_code == 200:
                     content = file_response.text
                     await self._embed_and_upsert(file_path, content, repo_full_name)
 
     async def _embed_and_upsert(self, file_path: str, content: str, repo_name: str):
         if not index:
-            logger.error("Skipping upsert: Pinecone index is not initialized. Check your API key and Index name.")
+            logger.error(
+                "Skipping upsert: Pinecone index is not initialized. Check your API key and Index name."
+            )
             return
-            
+
         if file_path.endswith(".json"):
             try:
                 data = json.loads(content)
                 content = self._extract_json_strings(data)
             except Exception:
                 pass
-            
+
         chunks = self.text_splitter.split_text(content)
-        
+
         records = []
         for chunk in chunks:
             if not chunk.strip():
                 continue
             chunk_id = str(uuid.uuid4())
-            records.append({
-                "id": chunk_id,
-                "text": chunk,
-                "source": file_path,
-                "repo": repo_name
-            })
+            records.append(
+                {"id": chunk_id, "text": chunk, "source": file_path, "repo": repo_name}
+            )
 
         print(records)
-            
+
         for i in range(0, len(records), 100):
-            batch = records[i:i+100]
+            batch = records[i : i + 100]
             try:
-                index.upsert_records(namespace=settings.pinecone_namespace, records=batch)
+                index.upsert_records(
+                    namespace=settings.pinecone_namespace, records=batch
+                )
             except Exception as e:
                 logger.error(f"Pinecone upsert failed for batch: {str(e)}")
+
 
 ingestor = IngestionService()

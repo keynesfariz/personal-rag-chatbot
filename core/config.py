@@ -1,5 +1,9 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+env_file = (".env", ".env.local")
+
 
 class Settings(BaseSettings):
     # Server Configuration
@@ -20,10 +24,10 @@ class Settings(BaseSettings):
     pinecone_namespace: str = "__default__"
 
     # LLM API Keys
-    groq_api_key: Optional[str] = None
     gemini_api_key: Optional[str] = None
+    groq_api_key: Optional[str] = None
     xai_api_key: Optional[str] = None
-    
+
     # Embeddings API Key
     jina_api_key: Optional[str] = None
 
@@ -31,6 +35,7 @@ class Settings(BaseSettings):
     github_webhook_secret: str
     github_pat: Optional[str] = None
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=env_file, env_file_encoding="utf-8")
+
 
 settings = Settings()
