@@ -3,7 +3,7 @@ import uuid
 import json
 from typing import Dict, Any
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from services.rag import embeddings, index
+from services.rag import index
 from core.config import settings
 
 class IngestionService:
@@ -76,7 +76,7 @@ class IngestionService:
                     await self._embed_and_upsert(file_path, content, repo_full_name)
 
     async def _embed_and_upsert(self, file_path: str, content: str, repo_name: str):
-        if not index or not embeddings:
+        if not index:
             return
             
         if file_path.endswith(".json"):
@@ -88,24 +88,22 @@ class IngestionService:
             
         chunks = self.text_splitter.split_text(content)
         
-        vectors = []
+        records = []
         for chunk in chunks:
             if not chunk.strip():
                 continue
             chunk_id = str(uuid.uuid4())
-            embedding = embeddings.embed_query(chunk)
-            vectors.append({
-                "id": chunk_id,
-                "values": embedding,
-                "metadata": {
-                    "source": file_path,
-                    "repo": repo_name,
-                    "text": chunk
-                }
+            records.append({
+                "_id": chunk_id,
+                "text": chunk,
+                "source": file_path,
+                "repo": repo_name
             })
+
+        print(records)
             
-        for i in range(0, len(vectors), 100):
-            batch = vectors[i:i+100]
-            index.upsert(vectors=batch)
+        for i in range(0, len(records), 100):
+            batch = records[i:i+100]
+            index.upsert_records(namespace="", records=batch)
 
 ingestor = IngestionService()

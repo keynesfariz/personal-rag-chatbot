@@ -1,7 +1,7 @@
 from pinecone import Pinecone
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from services.cache import cache
 from core.config import settings
+from services.cache import redis_client
 
 # Initialize Pinecone
 try:
@@ -11,38 +11,34 @@ except Exception as e:
     # Handle cases where API keys are not set yet during development
     index = None
 
-# Initialize Embeddings
-try:
-    embedding_model = "gemini-embedding-2"
-    embeddings = GoogleGenerativeAIEmbeddings(
-        google_api_key=settings.gemini_api_key,
-        model=embedding_model
-    )
-    from services.cache import redis_client
-    redis_client.set("cached_embedding_model", f"Gemini ({embedding_model})")
-except Exception:
-    embeddings = None
+# Cache the model name for the frontend
+redis_client.set("cached_embedding_model", "Pinecone Integrated Inference")
 
 class RAGService:
     def get_context(self, query: str, conversation_id: str) -> str:
         """Retrieves relevant context from Pinecone and caches it via Redis."""
-        if not index or not embeddings:
+        if not index:
             return "Knowledge base is currently unavailable."
 
-        # 1. Embed query
-        query_embedding = embeddings.embed_query(query)
-        
-        # 2. Query Pinecone
-        response = index.query(
-            vector=query_embedding,
+        # 1. Query Pinecone Integrated Inference directly with text
+        response = index.search(
+            namespace="",
             top_k=5,
-            include_metadata=True
+            inputs={"text": query}
         )
         
+        # Robustly extract hits based on SDK version
+        hits = response.get('hits', []) if isinstance(response, dict) else (response.hits if hasattr(response, 'hits') else response.result.hits)
+        
         new_chunks = []
-        for match in response.matches:
-            if match.metadata and "text" in match.metadata:
-                new_chunks.append(match.metadata["text"])
+        for hit in hits:
+            # Extract fields/metadata robustly
+            fields = getattr(hit, 'fields', {}) or getattr(hit, 'metadata', {})
+            if isinstance(hit, dict):
+                fields = hit.get('fields', hit.get('metadata', {}))
+                
+            if fields and "text" in fields:
+                new_chunks.append(fields["text"])
                 
         # 3. Cache new chunks for this conversation
         if new_chunks:
