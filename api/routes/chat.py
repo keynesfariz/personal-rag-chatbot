@@ -43,7 +43,6 @@ async def chat_endpoint(request: Request, body: ChatRequest):
 
     # 3. Retrieve Context
     context = rag.get_context(body.message, conversation_id)
-    print(context)
 
     # 4. Formulate Prompt
     try:
@@ -54,9 +53,10 @@ async def chat_endpoint(request: Request, body: ChatRequest):
 
     system_prompt = (
         f"You are {settings.bot_name}, an AI chatbot answering questions about {settings.owner_name}. "
-        "Use the following context to answer the user's question accurately. "
-        "If you don't know the answer based on the context, say so gracefully.\n\n"
-        f"Context:\n{context}"
+        "Use the following information to answer the user's question accurately. "
+        "Never use the word 'context' in your responses. "
+        "If the answer isn't in the provided information, say so gracefully and naturally'.\n\n"
+        f"Information:\n{context}"
     )
 
     messages = [
