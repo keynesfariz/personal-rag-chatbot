@@ -10,11 +10,11 @@ class Settings(BaseSettings):
     port: int = 8000
     environment: str = "development"
     allowed_origins: str = "https://keynesfariz.github.io,http://localhost:3000"
-    session_ttl_seconds: int = 7200
+    session_ttl_seconds: int = 300
 
     # Rate Limiting Configuration
-    rate_limit_week_seconds: int = 7 * 24 * 3600
-    rate_limit_max_queries: int = 30
+    rate_limit_window_seconds: int = 60 * 60 * 24 * 7  # rate limit window in seconds
+    rate_limit_max_queries: int = 30  # max queries per window
 
     # App Configuration
     bot_name: str = "Farsisstant"

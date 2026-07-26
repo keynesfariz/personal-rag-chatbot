@@ -5,7 +5,8 @@ from services.rate_limit import rate_limit
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
-@router.get("/")
+
+@router.get("")
 async def get_conversations(request: Request):
     fingerprint = rate_limit.generate_fingerprint(request)
     try:
@@ -13,6 +14,7 @@ async def get_conversations(request: Request):
         return {"status": "success", "conversations": conversations}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/{conversation_id}")
 async def get_conversation_history(conversation_id: str, request: Request):

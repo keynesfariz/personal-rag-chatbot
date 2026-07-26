@@ -134,8 +134,6 @@ class IngestionService:
                 {"id": chunk_id, "text": chunk, "source": file_path, "repo": repo_name}
             )
 
-        print(records)
-
         for i in range(0, len(records), 100):
             batch = records[i : i + 100]
             try:

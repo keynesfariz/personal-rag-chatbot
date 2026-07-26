@@ -8,5 +8,5 @@ class RedisKeys:
         return f"rag_chunks:{conversation_id}"
 
     @staticmethod
-    def rate_limit_week(fingerprint: str) -> str:
-        return f"rate_limit:week:{fingerprint}"
+    def rate_limit_window(fingerprint: str) -> str:
+        return f"rate_limit:window:{fingerprint}"

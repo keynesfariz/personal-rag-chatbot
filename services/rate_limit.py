@@ -24,11 +24,11 @@ class RateLimitService:
 
     def check_rate_limit(self, request: Request):
         """
-        Enforces a strict threshold of 30 queries per week.
+        Enforces a strict threshold of queries per window.
         Raises HTTPException 429 if exceeded.
         """
         fingerprint = self.generate_fingerprint(request)
-        key = RedisKeys.rate_limit_week(fingerprint)
+        key = RedisKeys.rate_limit_window(fingerprint)
 
         current = self.redis.get(key)
         if current and int(current) >= settings.rate_limit_max_queries:
@@ -40,7 +40,7 @@ class RateLimitService:
         pipe = self.redis.pipeline()
         pipe.incr(key)
         if not current:
-            pipe.expire(key, settings.rate_limit_week_seconds)
+            pipe.expire(key, settings.rate_limit_window_seconds)
         pipe.execute()
 
         return fingerprint

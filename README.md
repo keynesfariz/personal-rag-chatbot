@@ -41,7 +41,7 @@ Fill in the `.env` file with your specific database credentials, webhook secrets
 #### Key Configuration Variables
 - `BOT_NAME`: The name of the assistant (default: `Farsisstant`).
 - `OWNER_NAME`: The name of the persona the assistant answers questions about (default: `Fariz`).
-- `RATE_LIMIT_WEEK_SECONDS`: The duration for the rate limit window in seconds (default: `604800` for 1 week).
+- `RATE_LIMIT_WINDOW_SECONDS`: The duration for the rate limit window in seconds (default: `604800` for 1 week).
 - `RATE_LIMIT_MAX_QUERIES`: The maximum allowed queries within the rate limit window (default: `30`).
 
 ### 2. Database Migration
