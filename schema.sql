@@ -4,7 +4,6 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Create conversations table
 CREATE TABLE public.conversations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    guest_token TEXT,
     ip_address TEXT,
     device_fingerprint TEXT,
     topic TEXT,
@@ -22,6 +21,6 @@ CREATE TABLE public.messages (
 );
 
 -- Create indexes for faster queries
-CREATE INDEX idx_conversations_guest_token ON public.conversations(guest_token);
+CREATE INDEX idx_conversations_device_fingerprint ON public.conversations(device_fingerprint);
 CREATE INDEX idx_messages_conversation_id ON public.messages(conversation_id);
 CREATE INDEX idx_messages_created_at ON public.messages(created_at);

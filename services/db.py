@@ -15,7 +15,6 @@ class SupabaseDB:
 
     def create_conversation(
         self,
-        guest_token: str,
         ip_address: str,
         device_fingerprint: str,
         topic: Optional[str] = None,
@@ -27,7 +26,6 @@ class SupabaseDB:
             .insert(
                 {
                     "id": conversation_id,
-                    "guest_token": guest_token,
                     "ip_address": ip_address,
                     "device_fingerprint": device_fingerprint,
                     "topic": topic,
@@ -61,12 +59,12 @@ class SupabaseDB:
         )
         return response.data
 
-    def get_conversations(self, guest_token: str) -> List[Dict]:
-        """Retrieves a list of conversations for a given guest token."""
+    def get_conversations(self, device_fingerprint: str) -> List[Dict]:
+        """Retrieves a list of conversations for a given device fingerprint."""
         response = (
             self.supabase.table("conversations")
             .select("*")
-            .eq("guest_token", guest_token)
+            .eq("device_fingerprint", device_fingerprint)
             .order("created_at", desc=True)
             .execute()
         )

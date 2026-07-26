@@ -3,6 +3,7 @@ import json
 from redis import Redis
 
 from core.config import settings
+from core.constants import RedisKeys
 
 redis_client = Redis.from_url(settings.redis_url, decode_responses=True)
 
@@ -15,7 +16,7 @@ class CacheService:
 
     def cache_chunks(self, conversation_id: str, chunks: list):
         """Caches retrieved chunks for a conversation with a 2-hour TTL."""
-        key = f"rag_chunks:{conversation_id}"
+        key = RedisKeys.rag_chunks(conversation_id)
         existing = self.get_cached_chunks(conversation_id)
 
         # Deduplicate and append
@@ -24,7 +25,7 @@ class CacheService:
 
     def get_cached_chunks(self, conversation_id: str) -> list:
         """Retrieves cached chunks. Refreshes TTL to 2 hours if accessed."""
-        key = f"rag_chunks:{conversation_id}"
+        key = RedisKeys.rag_chunks(conversation_id)
         data = self.redis.get(key)
         if data:
             self.redis.expire(key, self.TTL)

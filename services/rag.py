@@ -3,14 +3,13 @@ import logging
 from pinecone import Pinecone
 
 from core.config import settings
+from core.constants import RedisKeys
 from services.cache import cache, redis_client
 
 logger = logging.getLogger("uvicorn.error")
 
 # Initialize Pinecone
 try:
-    print("settings.pinecone_api_key", settings.pinecone_api_key)
-    print("settings.pinecone_index_name", settings.pinecone_index_name)
     pc = Pinecone(api_key=settings.pinecone_api_key)
     index = pc.Index(settings.pinecone_index_name)
 except Exception as e:
@@ -19,18 +18,14 @@ except Exception as e:
     index = None
 
 # Cache the model name for the frontend
+model_name = "Pinecone Integrated Inference"
 try:
     desc = pc.indexes.describe(settings.pinecone_index_name)
-    model_name = "Pinecone Integrated Inference"
-    if (
-        hasattr(desc, "spec")
-        and hasattr(desc.spec, "integrated")
-        and hasattr(desc.spec.integrated, "embed")
-    ):
-        model_name = f"Pinecone ({desc.spec.integrated.embed.model})"
-    redis_client.set("cached_embedding_model", model_name)
+    if hasattr(desc, "embed") and hasattr(desc.embed, "model"):
+        model_name = f"Pinecone ({desc.embed.model})"
+    redis_client.set(RedisKeys.CACHED_EMBEDDING_MODEL, model_name)
 except Exception:
-    redis_client.set("cached_embedding_model", "Pinecone Integrated Inference")
+    redis_client.set(RedisKeys.CACHED_EMBEDDING_MODEL, model_name)
 
 
 class RAGService:
