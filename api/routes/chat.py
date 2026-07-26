@@ -8,6 +8,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 from core.config import settings
+from core.prompts import get_system_prompt
 from services.db import db
 from services.llm_factory import LLMFactory
 from services.rag import rag
@@ -51,13 +52,7 @@ async def chat_endpoint(request: Request, body: ChatRequest):
         # Fallback to groq if gemini is not configured
         llm = LLMFactory.get_llm(provider="groq")
 
-    system_prompt = (
-        f"You are {settings.bot_name}, an AI chatbot answering questions about {settings.owner_name}. "
-        "Use the following information to answer the user's question accurately. "
-        "Never use the word 'context' in your responses. "
-        "If the answer isn't in the provided information, say so gracefully and naturally'.\n\n"
-        f"Information:\n{context}"
-    )
+    system_prompt = get_system_prompt(settings.bot_name, settings.owner_name, context)
 
     messages = [
         SystemMessage(content=system_prompt),
