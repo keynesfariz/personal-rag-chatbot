@@ -1,12 +1,10 @@
 import hashlib
 import hmac
-from datetime import datetime, timezone
 
-from fastapi import APIRouter, Header, HTTPException, Request
+
+from fastapi import APIRouter, Header, HTTPException, Request, BackgroundTasks
 
 from core.config import settings
-from core.constants import RedisKeys
-from services.cache import redis_client
 from services.ingest import ingestor
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -15,6 +13,7 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 @router.post("/github")
 async def github_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     folders: str | None = None,
     files: str | None = None,
     read_dependency: bool = False,
@@ -44,16 +43,14 @@ async def github_webhook(
         # GitHub ping event (sent on webhook creation)
         repo_full_name = payload["repository"]["full_name"]
         branch = payload.get("repository", {}).get("default_branch", "main")
-        await ingestor.process_initial_ingestion(
+        background_tasks.add_task(
+            ingestor.process_initial_ingestion,
             repo_full_name, branch, folders_list, read_dependency, files_list
         )
     else:
-        await ingestor.process_webhook_payload(
+        background_tasks.add_task(
+            ingestor.process_webhook_payload,
             payload, folders_list, read_dependency, files_list
         )
-
-    # Record latest ingestion date in Redis
-    now = datetime.now(timezone.utc).isoformat()
-    redis_client.set(RedisKeys.LATEST_INGESTION_DATE, now)
 
     return {"status": "success"}

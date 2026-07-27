@@ -1,12 +1,15 @@
 import hashlib
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 import httpx
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from core.config import settings
+from core.constants import RedisKeys
+from services.cache import redis_client
 from services.rag import index
 
 logger = logging.getLogger("uvicorn.error")
@@ -84,36 +87,44 @@ class IngestionService:
         exact_files: list[str] | None = None,
     ):
         """Processes a GitHub push webhook payload to selectively ingest added/modified files."""
-        if "commits" not in payload:
-            return
+        try:
+            if "commits" not in payload:
+                return
 
-        repo_full_name = payload["repository"]["full_name"]
-        branch = payload["ref"].split("/")[-1]
+            repo_full_name = payload["repository"]["full_name"]
+            branch = payload["ref"].split("/")[-1]
 
-        files_to_process = set()
+            files_to_process = set()
 
-        for commit in payload["commits"]:
-            for file_path in commit.get("added", []) + commit.get("modified", []):
-                if self._should_process_file(
-                    file_path, folders, read_dependency, exact_files
-                ):
-                    files_to_process.add(file_path)
+            for commit in payload["commits"]:
+                for file_path in commit.get("added", []) + commit.get("modified", []):
+                    if self._should_process_file(
+                        file_path, folders, read_dependency, exact_files
+                    ):
+                        files_to_process.add(file_path)
 
-        async with httpx.AsyncClient(headers=self.headers) as client:
-            for file_path in files_to_process:
-                raw_url = f"https://raw.githubusercontent.com/{repo_full_name}/{branch}/{file_path}"
-                response = await client.get(raw_url)
+            async with httpx.AsyncClient(headers=self.headers) as client:
+                for file_path in files_to_process:
+                    raw_url = f"https://raw.githubusercontent.com/{repo_full_name}/{branch}/{file_path}"
+                    response = await client.get(raw_url)
 
-                if response.status_code == 200:
-                    content = response.text
-                    link = self._generate_link(repo_full_name, branch, file_path)
-                    await self._embed_and_upsert(
-                        file_path, content, repo_full_name, link
-                    )
-                else:
-                    logger.error(
-                        f"Failed to fetch {file_path}: HTTP {response.status_code}"
-                    )
+                    if response.status_code == 200:
+                        content = response.text
+                        link = self._generate_link(repo_full_name, branch, file_path)
+                        await self._embed_and_upsert(
+                            file_path, content, repo_full_name, link
+                        )
+                    else:
+                        logger.error(
+                            f"Failed to fetch {file_path}: HTTP {response.status_code}"
+                        )
+                        
+            now = datetime.now(timezone.utc).isoformat()
+            redis_client.set(RedisKeys.LATEST_INGESTION_DATE, now)
+            redis_client.set(RedisKeys.LATEST_INGESTION_STATUS, "SUCCESS")
+        except Exception as e:
+            logger.error(f"Webhook ingestion failed: {str(e)}")
+            redis_client.set(RedisKeys.LATEST_INGESTION_STATUS, "FAILED")
 
     async def process_initial_ingestion(
         self,
@@ -124,47 +135,56 @@ class IngestionService:
         exact_files: list[str] | None = None,
     ):
         """Fetches all markdown, json, and dependency files from the repository's git tree for initial ingestion."""
-        logger.info(
-            f"Starting initial ingestion for {repo_full_name} on branch {branch}"
-        )
-
-        if not settings.github_pat:
-            logger.warning(
-                "GITHUB_PAT is missing. Ingestion may fail if the repository is private."
+        try:
+            logger.info(
+                f"Starting initial ingestion for {repo_full_name} on branch {branch}"
             )
 
-        async with httpx.AsyncClient(headers=self.headers) as client:
-            tree_url = f"https://api.github.com/repos/{repo_full_name}/git/trees/{branch}?recursive=1"
-            response = await client.get(tree_url)
-
-            if response.status_code != 200:
-                logger.error(
-                    f"Failed to fetch git tree for {repo_full_name}: HTTP {response.status_code}. Response: {response.text}"
+            if not settings.github_pat:
+                logger.warning(
+                    "GITHUB_PAT is missing. Ingestion may fail if the repository is private."
                 )
-                return
 
-            tree_data = response.json()
-            files_to_process = [
-                item["path"]
-                for item in tree_data.get("tree", [])
-                if item["type"] == "blob"
-                and self._should_process_file(
-                    item["path"], folders, read_dependency, exact_files
-                )
-            ]
+            async with httpx.AsyncClient(headers=self.headers) as client:
+                tree_url = f"https://api.github.com/repos/{repo_full_name}/git/trees/{branch}?recursive=1"
+                response = await client.get(tree_url)
 
-            logger.info(f"Found {len(files_to_process)} files to process in tree.")
-
-            for file_path in files_to_process:
-                raw_url = f"https://raw.githubusercontent.com/{repo_full_name}/{branch}/{file_path}"
-                file_response = await client.get(raw_url)
-
-                if file_response.status_code == 200:
-                    content = file_response.text
-                    link = self._generate_link(repo_full_name, branch, file_path)
-                    await self._embed_and_upsert(
-                        file_path, content, repo_full_name, link
+                if response.status_code != 200:
+                    logger.error(
+                        f"Failed to fetch git tree for {repo_full_name}: HTTP {response.status_code}. Response: {response.text}"
                     )
+                    redis_client.set(RedisKeys.LATEST_INGESTION_STATUS, "FAILED")
+                    return
+
+                tree_data = response.json()
+                files_to_process = [
+                    item["path"]
+                    for item in tree_data.get("tree", [])
+                    if item["type"] == "blob"
+                    and self._should_process_file(
+                        item["path"], folders, read_dependency, exact_files
+                    )
+                ]
+
+                logger.info(f"Found {len(files_to_process)} files to process in tree.")
+
+                for file_path in files_to_process:
+                    raw_url = f"https://raw.githubusercontent.com/{repo_full_name}/{branch}/{file_path}"
+                    file_response = await client.get(raw_url)
+
+                    if file_response.status_code == 200:
+                        content = file_response.text
+                        link = self._generate_link(repo_full_name, branch, file_path)
+                        await self._embed_and_upsert(
+                            file_path, content, repo_full_name, link
+                        )
+
+            now = datetime.now(timezone.utc).isoformat()
+            redis_client.set(RedisKeys.LATEST_INGESTION_DATE, now)
+            redis_client.set(RedisKeys.LATEST_INGESTION_STATUS, "SUCCESS")
+        except Exception as e:
+            logger.error(f"Initial ingestion failed: {str(e)}")
+            redis_client.set(RedisKeys.LATEST_INGESTION_STATUS, "FAILED")
 
     async def _embed_and_upsert(
         self, file_path: str, content: str, repo_name: str, link: str
@@ -177,9 +197,9 @@ class IngestionService:
 
         try:
             index.delete(
-                namespace=settings.pinecone_namespace, filter={"source": file_path}
+                namespace=settings.pinecone_namespace, filter={"source": file_path, "repo": repo_name}
             )
-            logger.info(f"Cleaned up old chunks for {file_path}")
+            logger.info(f"Cleaned up old chunks for {file_path} in {repo_name}")
         except Exception as e:
             logger.error(f"Failed to delete old chunks for {file_path}: {str(e)}")
 
@@ -200,7 +220,7 @@ class IngestionService:
         for chunk in chunks:
             if not chunk.strip():
                 continue
-            hash_input = f"{file_path}_{chunk}".encode("utf-8")
+            hash_input = f"{repo_name}_{file_path}_{chunk}".encode("utf-8")
             chunk_id = hashlib.md5(hash_input).hexdigest()
             records.append(
                 {
