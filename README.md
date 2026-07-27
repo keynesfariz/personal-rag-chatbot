@@ -43,6 +43,7 @@ Fill in the `.env` file with your specific database credentials, webhook secrets
 - `OWNER_NAME`: The name of the persona the assistant answers questions about (default: `Fariz`).
 - `RATE_LIMIT_WINDOW_SECONDS`: The duration for the rate limit window in seconds (default: `604800` for 1 week).
 - `RATE_LIMIT_MAX_QUERIES`: The maximum allowed queries within the rate limit window (default: `30`).
+- `SESSION_TTL_SECONDS`: The duration of a conversation session in seconds before it expires due to inactivity (default: `300`).
 
 ### 2. Database Migration
 
