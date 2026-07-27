@@ -30,7 +30,7 @@ class LLMFactory:
         elif provider == "gemini":
             if not settings.gemini_api_key:
                 raise ValueError("GEMINI_API_KEY is not set.")
-            model_name = "gemini-3.5-flash-lite"
+            model_name = "gemini-3.1-flash-lite"
             redis_client.set(RedisKeys.CACHED_LLM_MODEL, f"Gemini ({model_name})")
             return ChatGoogleGenerativeAI(
                 google_api_key=settings.gemini_api_key,

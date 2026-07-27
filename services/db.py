@@ -59,13 +59,16 @@ class SupabaseDB:
         )
         return response.data
 
-    def get_conversations(self, device_fingerprint: str) -> List[Dict]:
+    def get_conversations(self, device_fingerprint: str, session_ttl_seconds: int) -> List[Dict]:
         """Retrieves a list of conversations for a given device fingerprint."""
         response = (
-            self.supabase.table("conversations")
-            .select("*")
-            .eq("device_fingerprint", device_fingerprint)
-            .order("created_at", desc=True)
+            self.supabase.rpc(
+                "get_conversations_summary",
+                {
+                    "p_device_fingerprint": device_fingerprint,
+                    "p_session_ttl_seconds": session_ttl_seconds,
+                },
+            )
             .execute()
         )
         return response.data
