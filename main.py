@@ -3,8 +3,8 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from core.config import settings
 from api.routes import api_router
+from core.config import settings
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -22,7 +22,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.get("/")
+def health():
+    return {"status": "ok"}
+
+
 app.include_router(api_router)
+
 
 if __name__ == "__main__":
     import uvicorn

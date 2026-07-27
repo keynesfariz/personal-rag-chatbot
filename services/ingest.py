@@ -1,6 +1,6 @@
+import hashlib
 import json
 import logging
-import uuid
 from typing import Any, Dict
 
 import httpx
@@ -33,8 +33,15 @@ class IngestionService:
             return ""
 
     def _should_process_file(
-        self, file_path: str, folders: list[str] | None, read_dependency: bool
+        self,
+        file_path: str,
+        folders: list[str] | None,
+        read_dependency: bool,
+        exact_files: list[str] | None = None,
     ) -> bool:
+        if exact_files:
+            return file_path in exact_files
+
         filename = file_path.split("/")[-1]
         is_dependency = filename in [
             "package.json",
@@ -74,6 +81,7 @@ class IngestionService:
         payload: Dict,
         folders: list[str] | None = None,
         read_dependency: bool = False,
+        exact_files: list[str] | None = None,
     ):
         """Processes a GitHub push webhook payload to selectively ingest added/modified files."""
         if "commits" not in payload:
@@ -86,7 +94,9 @@ class IngestionService:
 
         for commit in payload["commits"]:
             for file_path in commit.get("added", []) + commit.get("modified", []):
-                if self._should_process_file(file_path, folders, read_dependency):
+                if self._should_process_file(
+                    file_path, folders, read_dependency, exact_files
+                ):
                     files_to_process.add(file_path)
 
         async with httpx.AsyncClient(headers=self.headers) as client:
@@ -111,6 +121,7 @@ class IngestionService:
         branch: str = "main",
         folders: list[str] | None = None,
         read_dependency: bool = False,
+        exact_files: list[str] | None = None,
     ):
         """Fetches all markdown, json, and dependency files from the repository's git tree for initial ingestion."""
         logger.info(
@@ -137,7 +148,9 @@ class IngestionService:
                 item["path"]
                 for item in tree_data.get("tree", [])
                 if item["type"] == "blob"
-                and self._should_process_file(item["path"], folders, read_dependency)
+                and self._should_process_file(
+                    item["path"], folders, read_dependency, exact_files
+                )
             ]
 
             logger.info(f"Found {len(files_to_process)} files to process in tree.")
@@ -162,6 +175,14 @@ class IngestionService:
             )
             return
 
+        try:
+            index.delete(
+                namespace=settings.pinecone_namespace, filter={"source": file_path}
+            )
+            logger.info(f"Cleaned up old chunks for {file_path}")
+        except Exception as e:
+            logger.error(f"Failed to delete old chunks for {file_path}: {str(e)}")
+
         if (
             file_path.endswith(".json")
             and "package.json" not in file_path
@@ -179,7 +200,8 @@ class IngestionService:
         for chunk in chunks:
             if not chunk.strip():
                 continue
-            chunk_id = str(uuid.uuid4())
+            hash_input = f"{file_path}_{chunk}".encode("utf-8")
+            chunk_id = hashlib.md5(hash_input).hexdigest()
             records.append(
                 {
                     "id": chunk_id,

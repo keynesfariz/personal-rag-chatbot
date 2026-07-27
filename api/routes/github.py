@@ -16,6 +16,7 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 async def github_webhook(
     request: Request,
     folders: str | None = None,
+    files: str | None = None,
     read_dependency: bool = False,
     x_hub_signature_256: str = Header(None),
 ):
@@ -37,16 +38,19 @@ async def github_webhook(
 
     # Process asynchronously
     folders_list = folders.split(",") if folders else None
+    files_list = files.split(",") if files else None
 
     if "zen" in payload:
         # GitHub ping event (sent on webhook creation)
         repo_full_name = payload["repository"]["full_name"]
         branch = payload.get("repository", {}).get("default_branch", "main")
         await ingestor.process_initial_ingestion(
-            repo_full_name, branch, folders_list, read_dependency
+            repo_full_name, branch, folders_list, read_dependency, files_list
         )
     else:
-        await ingestor.process_webhook_payload(payload, folders_list, read_dependency)
+        await ingestor.process_webhook_payload(
+            payload, folders_list, read_dependency, files_list
+        )
 
     # Record latest ingestion date in Redis
     now = datetime.now(timezone.utc).isoformat()
