@@ -32,8 +32,50 @@ class IngestionService:
         else:
             return ""
 
-    async def process_webhook_payload(self, payload: Dict):
-        """Processes a GitHub push webhook payload to selectively ingest added/modified md and json files."""
+    def _should_process_file(
+        self, file_path: str, folders: list[str] | None, read_dependency: bool
+    ) -> bool:
+        filename = file_path.split("/")[-1]
+        is_dependency = filename in [
+            "package.json",
+            "requirements.txt",
+            "composer.json",
+            "go.mod",
+        ]
+        if is_dependency and read_dependency:
+            return True
+
+        if not (file_path.endswith(".md") or file_path.endswith(".json")):
+            return False
+
+        if not folders:
+            return True
+
+        for folder in folders:
+            if file_path.startswith(f"{folder}/") or file_path == folder:
+                return True
+
+        return False
+
+    def _generate_link(self, repo_full_name: str, branch: str, file_path: str) -> str:
+        if (
+            repo_full_name == "keynesfariz/keynesfariz.github.io"
+            and file_path.startswith("contents/")
+            and file_path.endswith(".md")
+        ):
+            filename = file_path.split("/")[-1]
+            slug = filename[:-3]
+            return f"https://keynesfariz.github.io/writings/{slug}"
+
+        return f"https://github.com/{repo_full_name}/blob/{branch}/{file_path}"
+
+    async def process_webhook_payload(
+        self,
+        payload: Dict,
+        folders: list[str] | None = None,
+        read_dependency: bool = False,
+    ):
+        """Processes a GitHub push webhook payload to selectively ingest added/modified files."""
         if "commits" not in payload:
             return
 
@@ -44,9 +86,7 @@ class IngestionService:
 
         for commit in payload["commits"]:
             for file_path in commit.get("added", []) + commit.get("modified", []):
-                if file_path.endswith(".md") or (
-                    file_path.endswith(".json") and file_path.startswith("data/")
-                ):
+                if self._should_process_file(file_path, folders, read_dependency):
                     files_to_process.add(file_path)
 
         async with httpx.AsyncClient(headers=self.headers) as client:
@@ -56,16 +96,23 @@ class IngestionService:
 
                 if response.status_code == 200:
                     content = response.text
-                    await self._embed_and_upsert(file_path, content, repo_full_name)
+                    link = self._generate_link(repo_full_name, branch, file_path)
+                    await self._embed_and_upsert(
+                        file_path, content, repo_full_name, link
+                    )
                 else:
                     logger.error(
                         f"Failed to fetch {file_path}: HTTP {response.status_code}"
                     )
 
     async def process_initial_ingestion(
-        self, repo_full_name: str, branch: str = "main"
+        self,
+        repo_full_name: str,
+        branch: str = "main",
+        folders: list[str] | None = None,
+        read_dependency: bool = False,
     ):
-        """Fetches all markdown and json files from the repository's git tree for initial ingestion."""
+        """Fetches all markdown, json, and dependency files from the repository's git tree for initial ingestion."""
         logger.info(
             f"Starting initial ingestion for {repo_full_name} on branch {branch}"
         )
@@ -90,13 +137,7 @@ class IngestionService:
                 item["path"]
                 for item in tree_data.get("tree", [])
                 if item["type"] == "blob"
-                and (
-                    item["path"].endswith(".md")
-                    or (
-                        item["path"].endswith(".json")
-                        and item["path"].startswith("data/")
-                    )
-                )
+                and self._should_process_file(item["path"], folders, read_dependency)
             ]
 
             logger.info(f"Found {len(files_to_process)} files to process in tree.")
@@ -107,16 +148,25 @@ class IngestionService:
 
                 if file_response.status_code == 200:
                     content = file_response.text
-                    await self._embed_and_upsert(file_path, content, repo_full_name)
+                    link = self._generate_link(repo_full_name, branch, file_path)
+                    await self._embed_and_upsert(
+                        file_path, content, repo_full_name, link
+                    )
 
-    async def _embed_and_upsert(self, file_path: str, content: str, repo_name: str):
+    async def _embed_and_upsert(
+        self, file_path: str, content: str, repo_name: str, link: str
+    ):
         if not index:
             logger.error(
                 "Skipping upsert: Pinecone index is not initialized. Check your API key and Index name."
             )
             return
 
-        if file_path.endswith(".json"):
+        if (
+            file_path.endswith(".json")
+            and "package.json" not in file_path
+            and "composer.json" not in file_path
+        ):
             try:
                 data = json.loads(content)
                 content = self._extract_json_strings(data)
@@ -131,7 +181,13 @@ class IngestionService:
                 continue
             chunk_id = str(uuid.uuid4())
             records.append(
-                {"id": chunk_id, "text": chunk, "source": file_path, "repo": repo_name}
+                {
+                    "id": chunk_id,
+                    "text": chunk,
+                    "source": file_path,
+                    "repo": repo_name,
+                    "link": link,
+                }
             )
 
         for i in range(0, len(records), 100):

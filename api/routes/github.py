@@ -11,8 +11,14 @@ from services.ingest import ingestor
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
+
 @router.post("/github")
-async def github_webhook(request: Request, x_hub_signature_256: str = Header(None)):
+async def github_webhook(
+    request: Request,
+    folders: str | None = None,
+    read_dependency: bool = False,
+    x_hub_signature_256: str = Header(None),
+):
     if not x_hub_signature_256:
         raise HTTPException(status_code=401, detail="Missing signature")
 
@@ -30,13 +36,17 @@ async def github_webhook(request: Request, x_hub_signature_256: str = Header(Non
     payload = await request.json()
 
     # Process asynchronously
+    folders_list = folders.split(",") if folders else None
+
     if "zen" in payload:
         # GitHub ping event (sent on webhook creation)
         repo_full_name = payload["repository"]["full_name"]
         branch = payload.get("repository", {}).get("default_branch", "main")
-        await ingestor.process_initial_ingestion(repo_full_name, branch)
+        await ingestor.process_initial_ingestion(
+            repo_full_name, branch, folders_list, read_dependency
+        )
     else:
-        await ingestor.process_webhook_payload(payload)
+        await ingestor.process_webhook_payload(payload, folders_list, read_dependency)
 
     # Record latest ingestion date in Redis
     now = datetime.now(timezone.utc).isoformat()
