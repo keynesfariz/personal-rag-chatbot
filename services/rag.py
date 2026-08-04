@@ -54,7 +54,11 @@ class RAGService:
                 fields = hit.get("fields", hit.get("metadata", {}))
 
             if fields and "text" in fields:
-                new_chunks.append(fields["text"])
+                text = fields["text"]
+                link = fields.get("link", "N/A")
+                repo = fields.get("repo", "N/A")
+                chunk_str = f"{text} \n link: {link} \n repo: {repo}"
+                new_chunks.append(chunk_str)
 
         # 3. Cache new chunks for this conversation
         if new_chunks:
