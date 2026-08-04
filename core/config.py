@@ -37,9 +37,6 @@ class Settings(BaseSettings):
     groq_api_key: Optional[str] = None
     xai_api_key: Optional[str] = None
 
-    # Embeddings API Key
-    jina_api_key: Optional[str] = None
-
     # Webhook Secret & PAT
     github_webhook_secret: str
     github_pat: Optional[str] = None
