@@ -25,14 +25,7 @@ CREATE INDEX idx_conversations_device_fingerprint ON public.conversations(device
 CREATE INDEX idx_messages_conversation_id ON public.messages(conversation_id);
 CREATE INDEX idx_messages_created_at ON public.messages(created_at);
 
--- 1. Create indexes to optimize the JOIN and WHERE clauses
-CREATE INDEX IF NOT EXISTS idx_conversations_fingerprint 
-ON conversations (device_fingerprint);
-
-CREATE INDEX IF NOT EXISTS idx_messages_conversation_id 
-ON messages (conversation_id);
-
--- 2. Create the RPC function to fetch conversations with expires_at
+-- RPC function to fetch conversations with expires_at
 CREATE OR REPLACE FUNCTION get_conversations_summary(
     p_device_fingerprint TEXT,
     p_session_ttl_seconds INT
